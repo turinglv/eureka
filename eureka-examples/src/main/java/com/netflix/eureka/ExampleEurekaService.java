@@ -27,6 +27,8 @@ import com.netflix.appinfo.MyDataCenterInstanceConfig;
 import com.netflix.config.DynamicPropertyFactory;
 import com.netflix.discovery.DefaultEurekaClientConfig;
 import com.netflix.discovery.EurekaClientConfig;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 /**
  * Sample Eureka service that registers with Eureka to receive and process requests.
@@ -56,7 +58,9 @@ public class ExampleEurekaService {
     }
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws UnknownHostException {
+
+        injectEurekaConfiguration();
 
         DynamicPropertyFactory configInstance = com.netflix.config.DynamicPropertyFactory.getInstance();
         ApplicationInfoManager applicationInfoManager = initializeApplicationInfoManager(new MyDataCenterInstanceConfig());
@@ -69,5 +73,20 @@ public class ExampleEurekaService {
             // the stop calls shutdown on eurekaClient
             exampleServiceBase.stop();
         }
+    }
+
+    private static void injectEurekaConfiguration() throws UnknownHostException {
+        String myHostName = InetAddress.getLocalHost().getHostName();
+        String myServiceUrl = "http://" + myHostName + ":8080/v2/";
+
+        System.setProperty("eureka.region", "default");
+        System.setProperty("eureka.name", "eureka");
+        System.setProperty("eureka.vipAddress", "sample-service.mydomain.net");
+        System.setProperty("eureka.port", "8001");
+        System.setProperty("eureka.preferSameZone", "false");
+        System.setProperty("eureka.shouldUseDns", "false");
+        System.setProperty("eureka.shouldFetchRegistry", "true");
+        System.setProperty("eureka.serviceUrl.defaultZone", myServiceUrl);
+        System.setProperty("eureka.serviceUrl.default.defaultZone", myServiceUrl);
     }
 }
