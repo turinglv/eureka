@@ -101,6 +101,13 @@ public class DefaultEurekaServerConfig implements EurekaServerConfig {
         init();
     }
 
+    /**
+     * 初始化 配置文件对象
+     *
+     * Spring Cloud Eureka Server org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration
+     *
+     * 初始化配置 EurekaServerConfigBean
+     */
     private void init() {
         String env = ConfigurationManager.getConfigInstance().getString(
                 EUREKA_ENVIRONMENT, TEST);
