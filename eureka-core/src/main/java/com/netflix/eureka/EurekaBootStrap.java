@@ -63,6 +63,15 @@ import org.slf4j.LoggerFactory;
  *
  * @author Karthik Ranganathan, Greg Kim, David Liu
  *
+ * eureka-server 是监听容器来启动的 @see eureka-server/src/main/webapp/WEB-INF/web.xml
+ *
+ * <listener>
+ *  <listener-class>com.netflix.eureka.EurekaBootStrap</listener-class>
+ * </listener>
+ *
+ * spring cloud 是用过一下类实现启动 eureka-server
+ * spring-cloud-netflix-eureka-server @see org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration
+ *
  */
 public class EurekaBootStrap implements ServletContextListener {
     private static final Logger logger = LoggerFactory.getLogger(EurekaBootStrap.class);
@@ -108,9 +117,16 @@ public class EurekaBootStrap implements ServletContextListener {
      * javax.servlet.ServletContextListener#contextInitialized(javax.servlet.ServletContextEvent)
      */
     @Override
+
+    /**
+     * EurekaBootStrap启动入口
+     */
     public void contextInitialized(ServletContextEvent event) {
         try {
+            // 初始化 Eureka-Server 配置环境
             initEurekaEnvironment();
+
+            // 初始化 Eureka-Server 上下文
             initEurekaServerContext();
 
             ServletContext sc = event.getServletContext();
@@ -127,6 +143,12 @@ public class EurekaBootStrap implements ServletContextListener {
     protected void initEurekaEnvironment() throws Exception {
         logger.info("Setting the eureka configuration..");
 
+        // 设置配置文件的数据中心
+
+        /**
+         * If you are running in the cloud environment, you will need to pass in the java commandline property
+         * -Deureka.datacenter=cloud so that the Eureka Client/Server knows to initialize the information specific to AWS cloud.
+         */
         String dataCenter = ConfigurationManager.getConfigInstance().getString(EUREKA_DATACENTER);
         if (dataCenter == null) {
             logger.info("Eureka data center value eureka.datacenter is not set, defaulting to default");
@@ -134,6 +156,8 @@ public class EurekaBootStrap implements ServletContextListener {
         } else {
             ConfigurationManager.getConfigInstance().setProperty(ARCHAIUS_DEPLOYMENT_DATACENTER, dataCenter);
         }
+
+        // 设置配置文件的环境
         String environment = ConfigurationManager.getConfigInstance().getString(EUREKA_ENVIRONMENT);
         if (environment == null) {
             ConfigurationManager.getConfigInstance().setProperty(ARCHAIUS_DEPLOYMENT_ENVIRONMENT, TEST);
@@ -145,16 +169,23 @@ public class EurekaBootStrap implements ServletContextListener {
      * init hook for server context. Override for custom logic.
      */
     protected void initEurekaServerContext() throws Exception {
+        // 创建 Eureka-Server 配置
+        // 类比 org.springframework.cloud.netflix.eureka.server.EurekaServerConfigBean
         EurekaServerConfig eurekaServerConfig = new DefaultEurekaServerConfig();
 
         // For backward compatibility
         JsonXStream.getInstance().registerConverter(new V1AwareInstanceInfoConverter(), XStream.PRIORITY_VERY_HIGH);
         XmlXStream.getInstance().registerConverter(new V1AwareInstanceInfoConverter(), XStream.PRIORITY_VERY_HIGH);
 
+        // 创建 Eureka-Server 请求和响应编解码器
+        // 类比 org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration.CloudServerCodecs
         logger.info("Initializing the eureka client...");
         logger.info(eurekaServerConfig.getJsonCodecName());
         ServerCodecs serverCodecs = new DefaultServerCodecs(eurekaServerConfig);
 
+        // 创建 Eureka-Client Eureka-Server 内嵌 Eureka-Client，用于和 Eureka-Server 集群里其他节点通信交互。
+
+        // 类比 org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration.RefreshableEurekaClientConfiguration#eurekaApplicationInfoManager
         ApplicationInfoManager applicationInfoManager = null;
 
         if (eurekaClient == null) {
@@ -166,11 +197,14 @@ public class EurekaBootStrap implements ServletContextListener {
                     instanceConfig, new EurekaConfigBasedInstanceInfoProvider(instanceConfig).get());
             
             EurekaClientConfig eurekaClientConfig = new DefaultEurekaClientConfig();
+            // 类比 org.springframework.cloud.netflix.eureka.EurekaClientAutoConfiguration.RefreshableEurekaClientConfiguration#eurekaClient
             eurekaClient = new DiscoveryClient(applicationInfoManager, eurekaClientConfig);
         } else {
             applicationInfoManager = eurekaClient.getApplicationInfoManager();
         }
 
+        // 创建应用实例信息的注册表 [重点分析]
+        // org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration#peerAwareInstanceRegistry
         PeerAwareInstanceRegistry registry;
         if (isAws(applicationInfoManager.getInfo())) {
             registry = new AwsInstanceRegistry(
@@ -190,6 +224,8 @@ public class EurekaBootStrap implements ServletContextListener {
             );
         }
 
+        // 创建 Eureka-Server 集群节点集合 [重点分析]
+        // org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration#peerEurekaNodes
         PeerEurekaNodes peerEurekaNodes = getPeerEurekaNodes(
                 registry,
                 eurekaServerConfig,
@@ -198,6 +234,9 @@ public class EurekaBootStrap implements ServletContextListener {
                 applicationInfoManager
         );
 
+        // 创建 Eureka-Server 上下文
+        // Eureka-Server 上下文接口，提供Eureka-Server 内部各组件对象的初始化、关闭、获取等方法
+        // org.springframework.cloud.netflix.eureka.server.EurekaServerAutoConfiguration#eurekaServerContext
         serverContext = new DefaultEurekaServerContext(
                 eurekaServerConfig,
                 serverCodecs,
@@ -206,16 +245,21 @@ public class EurekaBootStrap implements ServletContextListener {
                 applicationInfoManager
         );
 
+        // 初始化 EurekaServerContextHolder
+        // Eureka-Server 上下文持有者。通过它，可以很方便的获取到 Eureka-Server 上下文
         EurekaServerContextHolder.initialize(serverContext);
 
+        // 初始化 Eureka-Server 上下文
         serverContext.initialize();
         logger.info("Initialized server context");
 
         // Copy registry from neighboring eureka node
+        // 从其他 Eureka-Server 拉取注册信息
         int registryCount = registry.syncUp();
         registry.openForTraffic(applicationInfoManager, registryCount);
 
         // Register all monitoring statistics.
+        // 注册监控 配合Netflix Servo
         EurekaMonitors.registerAllStats();
     }
     
